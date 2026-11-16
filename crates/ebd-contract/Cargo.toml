@@ -1,0 +1,9 @@
+[package]
+name = "ebd-contract"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
