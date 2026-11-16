@@ -1,0 +1,10 @@
+[package]
+name = "ebd-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ebd-core = { path = "../ebd-core" }
+ebd-contract = { path = "../ebd-contract" }
+ebd-mock-client = { path = "../ebd-mock-client" }
