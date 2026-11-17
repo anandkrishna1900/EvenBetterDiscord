@@ -108,14 +108,61 @@ impl ClientAdapter for MockClient {
     }
 
     fn open_external_url(&self, url: &str) -> Result<(), AdapterError> {
-        // Deny-by-default: only absolute https URLs are handed to the OS.
-        match url.strip_prefix("https://") {
-            Some(host) if !host.is_empty() => Ok(()),
-            _ => Err(AdapterError::Operation(format!(
+        // Deny-by-default: only absolute https URLs with a real host are handed
+        // to the OS. This is deliberately stricter than the URL grammar: anything
+        // ambiguous is refused rather than guessed at.
+        if is_absolute_https(url) {
+            Ok(())
+        } else {
+            Err(AdapterError::Operation(format!(
                 "refusing to open a URL that is not absolute https: {url}"
-            ))),
+            )))
         }
     }
+}
+
+/// Accepts `https://<host>[/path][?query][#fragment]` where `<host>` is
+/// non-empty and free of whitespace, control characters, and empty ports.
+///
+/// This is a guard for a mock adapter, not a URL parser.
+fn is_absolute_https(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("https://") else {
+        return false;
+    };
+
+    if rest
+        .chars()
+        .any(|character| character.is_whitespace() || character.is_control())
+    {
+        return false;
+    }
+
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = authority.rsplit('@').next().unwrap_or_default();
+
+    if host.starts_with('[') {
+        // Bracketed IPv6 literal, possibly with a port: `[::1]:8443`.
+        let Some((literal, remainder)) = host.split_once(']') else {
+            return false;
+        };
+        return literal.len() > 1 && (remainder.is_empty() || remainder.starts_with(':'));
+    }
+
+    let (host, port) = match host.rsplit_once(':') {
+        Some((host, port)) => (host, Some(port)),
+        None => (host, None),
+    };
+
+    if host.is_empty() || host == "." {
+        return false;
+    }
+    if let Some(port) = port {
+        if port.is_empty() || !port.chars().all(|character| character.is_ascii_digit()) {
+            return false;
+        }
+    }
+
+    true
 }
 
 #[cfg(test)]
@@ -197,15 +244,27 @@ mod tests {
 
     #[test]
     fn external_urls_must_be_absolute_https() {
-        assert!(client()
-            .open_external_url("https://example.com/docs")
-            .is_ok());
+        for url in [
+            "https://example.com/docs",
+            "https://example.com:8443/a?b#c",
+            "https://user:pass@example.com/x",
+            "https://[::1]:8443/",
+        ] {
+            assert!(
+                client().open_external_url(url).is_ok(),
+                "should accept {url}"
+            );
+        }
 
         for url in [
             "http://example.com",
             "file:///C:/Windows/System32/calc.exe",
             "javascript:alert(1)",
             "https://",
+            "https:// foo",
+            "https://example.com:abc",
+            "https://:443",
+            "https://[::1",
             "example.com",
             "",
         ] {

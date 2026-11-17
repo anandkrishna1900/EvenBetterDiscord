@@ -21,3 +21,14 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.75
+      - uses: Swatinem/rust-cache@v2
+      # The tracked lockfile is written by a newer Cargo, so regenerate it with
+      # the minimum supported toolchain before checking.
+      - run: cargo generate-lockfile
+      - run: cargo check --workspace --all-targets

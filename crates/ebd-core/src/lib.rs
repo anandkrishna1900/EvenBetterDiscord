@@ -56,14 +56,6 @@ impl AdapterManager {
         })
     }
 
-    /// Returns the attached adapter, without checking capabilities.
-    ///
-    /// Prefer [`AdapterManager::adapter_for`] so an adapter that never declared a
-    /// capability cannot be used as if it had.
-    pub fn adapter(&self) -> Option<&dyn ClientAdapter> {
-        self.adapter.as_deref()
-    }
-
     /// Returns the attached adapter only when it declares `capability`.
     ///
     /// Fails with [`AdapterError::Operation`] when nothing is attached and with
