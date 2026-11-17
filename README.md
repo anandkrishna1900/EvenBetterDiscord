@@ -66,4 +66,4 @@ Adapters declare their capabilities in `capabilities()` and must return `Adapter
 4. Marketplace hashes detect corruption but do not authenticate publishers.
 5. No undocumented injection, credential extraction, or bypass of client security controls.
 
-See [ARCHITECTURE.md](docs/ARCHITECTURE.md), [SECURITY.md](docs/SECURITY.md), and [ROADMAP.md](docs/ROADMAP.md).
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md), [SECURITY.md](docs/SECURITY.md), [ROADMAP.md](docs/ROADMAP.md), and [PLUGIN_PLAN.md](docs/PLUGIN_PLAN.md).
