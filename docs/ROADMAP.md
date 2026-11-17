@@ -2,8 +2,10 @@
 
 ## Independent work
 - [x] Rust workspace and adapter contract
+- [x] Contract coverage for every declared capability
 - [x] Mock client and offline CLI demonstration
-- [x] Adapter capability reporting
+- [x] Adapter capability reporting and capability-gated dispatch
+- [x] Workspace tests, lint, and CI on Linux, Windows, and macOS
 - [ ] Persistent configuration and structured logging
 - [ ] Plugin manifest validation and permission grants
 - [ ] Sandboxed WASM runtime with resource limits
@@ -13,7 +15,6 @@
 - [ ] Publisher signatures and trust management
 - [ ] Native desktop UI (evaluate upstream GPUI)
 - [ ] Update channel and release packaging
-- [ ] Cross-platform CI and integration tests
 
 ## Discord-dependent work
 Blocked until Discord publishes a client build and a documented, authorised integration mechanism. At that point inspect public interfaces, build a separate adapter, and test against the released client. No undocumented injection or compatibility claims.

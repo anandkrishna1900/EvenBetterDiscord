@@ -8,9 +8,10 @@ This repository is the canonical development home. The current source is a found
 
 - Rust workspace with a stable client contract
 - Mock client for offline development
-- Core adapter manager and capability reporting
-- CLI demo and self-check
+- Core adapter manager, capability reporting, and capability gating
+- CLI demo, capability listing, and self-check
 - Security and integration-boundary documentation
+- Formatting, lint, and test CI on Linux, Windows, and macOS
 
 Not yet implemented: production WASM sandbox execution, a graphical GPUI application, publisher identity/signature trust, hosted marketplace services, auto-updates, and Discord integration.
 
@@ -19,27 +20,48 @@ Not yet implemented: production WASM sandbox execution, a graphical GPUI applica
 - Rust stable (see `.rust-toolchain.toml`)
 - Cargo
 
+On Windows the default `stable` toolchain expects the MSVC build tools. Without them, use the self-contained GNU toolchain: `rustup toolchain install stable-x86_64-pc-windows-gnu` and run cargo with `+stable-x86_64-pc-windows-gnu`.
+
 ## Build and test
 
 ```sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cargo run -p ebd-cli
-cargo run -p ebd-cli -- self-check
 ```
+
+## Usage
+
+```sh
+cargo run -p ebd-cli                  # demo (same as `demo`)
+cargo run -p ebd-cli -- capabilities  # list every contract capability and whether the adapter declares it
+cargo run -p ebd-cli -- self-check    # fail unless the adapter declares every capability
+```
+
+`demo` walks the mock adapter through the whole contract: current user, guilds, channels, recent messages, a sent message, and a capability-gated dispatch path. Every operation goes through `AdapterManager::adapter_for`, so an adapter that never declared a capability cannot be used as if it had.
 
 ## Workspace
 
-- `crates/ebd-contract`: shared types and adapter interface
-- `crates/ebd-core`: adapter registry and compatibility reporting
-- `crates/ebd-mock-client`: offline mock adapter
-- `crates/ebd-cli`: runnable demonstration
+- `crates/ebd-contract`: shared types, capabilities, and the `ClientAdapter` trait
+- `crates/ebd-core`: adapter registry, compatibility report, capability gate
+- `crates/ebd-mock-client`: deterministic offline adapter
+- `crates/ebd-cli`: runnable demonstration and self-check
+
+## Writing an adapter
+
+Implement `ClientAdapter` for your client and attach it:
+
+```rust
+let mut manager = AdapterManager::new();
+manager.attach(Box::new(MyAdapter::new()));
+```
+
+Adapters declare their capabilities in `capabilities()` and must return `AdapterError::Unsupported` for anything they do not declare. Core never depends on a specific client.
 
 ## Design principles
 
 1. EBD Core depends on a stable contract, never on Discord internals.
-2. Adapters must explicitly declare capabilities.
+2. Adapters must explicitly declare capabilities, and callers must gate on them.
 3. Plugins must receive explicit permissions and run sandboxed; do not execute untrusted native code.
 4. Marketplace hashes detect corruption but do not authenticate publishers.
 5. No undocumented injection, credential extraction, or bypass of client security controls.
