@@ -1,5 +1,6 @@
 /target
 /dist
+.vs/
 *.log
 .env
 .DS_Store

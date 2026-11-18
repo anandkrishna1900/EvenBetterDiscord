@@ -6,7 +6,7 @@
 - [x] Mock client and offline CLI demonstration
 - [x] Adapter capability reporting and capability-gated dispatch
 - [x] Workspace tests, lint, and CI on Linux, Windows, and macOS
-- [ ] Persistent configuration and structured logging
+- [x] Persistent configuration and structured logging
 - [ ] Plugin manifest validation and permission grants
 - [ ] Sandboxed WASM runtime with resource limits
 - [ ] Plugin SDK and example plugins

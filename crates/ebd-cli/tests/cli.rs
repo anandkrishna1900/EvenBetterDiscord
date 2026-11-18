@@ -1,11 +1,23 @@
 //! End-to-end checks of the CLI surface (arguments, output, exit codes).
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-fn ebd(args: &[&str]) -> Output {
+fn test_config(name: &str) -> PathBuf {
+    std::env::temp_dir()
+        .join(format!("ebd-cli-it-{}-{name}", std::process::id()))
+        .join("config.toml")
+}
+
+fn ebd_at(config: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_ebd-cli"))
         .args(args)
+        .env("EBD_CONFIG", config)
         .output()
         .expect("failed to run ebd-cli")
+}
+
+fn ebd(args: &[&str]) -> Output {
+    ebd_at(&test_config("default"), args)
 }
 
 fn stdout(output: &Output) -> String {
@@ -77,4 +89,49 @@ fn help_succeeds_and_unknown_commands_exit_with_usage_error() {
     let unknown = ebd(&["nope"]);
     assert_eq!(unknown.status.code(), Some(2));
     assert!(unknown.stdout.is_empty());
+}
+
+#[test]
+fn config_shows_defaults_without_writing_them() {
+    let path = test_config("show");
+    let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
+
+    let output = ebd_at(&path, &["config"]);
+    let text = stdout(&output);
+
+    assert!(output.status.success(), "stderr: {:?}", output.stderr);
+    assert!(text.contains("not created yet"), "{text}");
+    assert!(text.contains("\"level\": \"info\""), "{text}");
+    assert!(text.contains("\"format\": \"text\""), "{text}");
+    assert!(!path.exists(), "`config` must not create the file");
+}
+
+#[test]
+fn config_init_writes_defaults_and_refuses_to_overwrite() {
+    let path = test_config("init");
+    let _ = std::fs::remove_dir_all(path.parent().expect("parent"));
+
+    let first = ebd_at(&path, &["config", "--init"]);
+    assert!(first.status.success(), "stderr: {:?}", first.stderr);
+    assert!(path.exists());
+
+    let contents = std::fs::read_to_string(&path).expect("read config");
+    assert!(contents.contains("\"logging\""), "{contents}");
+
+    let second = ebd_at(&path, &["config", "--init"]);
+    assert_eq!(second.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&second.stderr).contains("refusing to overwrite"));
+}
+
+#[test]
+fn invalid_config_fails_loudly() {
+    let path = test_config("invalid");
+    std::fs::create_dir_all(path.parent().expect("parent")).expect("create temp dir");
+    std::fs::write(&path, r#"{"logging": {"levl": "debug"}}"#).expect("write config");
+
+    let output = ebd_at(&path, &["demo"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("invalid configuration"));
 }

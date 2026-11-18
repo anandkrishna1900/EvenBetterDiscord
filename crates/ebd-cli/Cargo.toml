@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+ebd-config = { path = "../ebd-config" }
 ebd-core = { path = "../ebd-core" }
 ebd-contract = { path = "../ebd-contract" }
 ebd-mock-client = { path = "../ebd-mock-client" }
+tracing.workspace = true
+tracing-subscriber.workspace = true

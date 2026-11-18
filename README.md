@@ -9,7 +9,8 @@ This repository is the canonical development home. The current source is a found
 - Rust workspace with a stable client contract
 - Mock client for offline development
 - Core adapter manager, capability reporting, and capability gating
-- CLI demo, capability listing, and self-check
+- CLI demo, capability listing, self-check, and config commands
+- Persistent JSON configuration and structured logging (text or JSON)
 - Security and integration-boundary documentation
 - Formatting, lint, and test CI on Linux, Windows, and macOS
 
@@ -36,16 +37,39 @@ cargo test --workspace
 cargo run -p ebd-cli                  # demo (same as `demo`)
 cargo run -p ebd-cli -- capabilities  # list every contract capability and whether the adapter declares it
 cargo run -p ebd-cli -- self-check    # fail unless the adapter declares every capability
+cargo run -p ebd-cli -- config        # show the effective configuration and its path
+cargo run -p ebd-cli -- config --init # write the defaults (refuses to overwrite)
 ```
 
 `demo` walks the mock adapter through the whole contract: current user, guilds, channels, recent messages, a sent message, and a capability-gated dispatch path. Every operation goes through `AdapterManager::adapter_for`, so an adapter that never declared a capability cannot be used as if it had.
+
+## Configuration and logging
+
+Configuration lives in `config.json` under the platform configuration root:
+
+- Windows: `%APPDATA%\ebd\config.json`
+- macOS/Linux: `$XDG_CONFIG_HOME/ebd/config.json`, falling back to `~/.config/ebd/config.json`
+
+Set `EBD_CONFIG` to use a different path. A missing file means "use defaults", so a fresh checkout runs without setup. Invalid files and unknown keys are errors rather than being silently ignored.
+
+```json
+{
+  "logging": {
+    "level": "info",
+    "format": "text"
+  }
+}
+```
+
+`level` is one of `error`, `warn`, `info`, `debug`, `trace`. `format` is `text` or `json`; JSON records go to stderr and suit log shipping. Configuration never stores credentials or client session data.
 
 ## Workspace
 
 - `crates/ebd-contract`: shared types, capabilities, and the `ClientAdapter` trait
 - `crates/ebd-core`: adapter registry, compatibility report, capability gate
 - `crates/ebd-mock-client`: deterministic offline adapter
-- `crates/ebd-cli`: runnable demonstration and self-check
+- `crates/ebd-config`: persistent configuration (`config.json`) and log settings
+- `crates/ebd-cli`: runnable demonstration, self-check, and config commands
 
 ## Writing an adapter
 
