@@ -6,17 +6,26 @@ members = [
   "crates/ebd-contract",
   "crates/ebd-core",
   "crates/ebd-mock-client",
+  "crates/ebd-plugin",
+  "crates/ebd-runtime",
+  "crates/ebd-theme",
+  "crates/ebd-registry",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-rust-version = "1.75"
+rust-version = "1.88"
 
 [workspace.dependencies]
+ed25519-dalek = { version = "=2.1.1", features = ["rand_core"] }
+hex = "=0.4.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "=0.10.8"
 thiserror = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "json"] }
+wasmi = "2.0.1"
+wat = "1.263.0"

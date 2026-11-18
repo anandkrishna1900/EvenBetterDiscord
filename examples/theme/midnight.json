@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "id": "midnight-blue",
+  "name": "Midnight Blue",
+  "description": "A dark example theme with a blue accent.",
+  "colors": {
+    "background": "#0b1020",
+    "foreground": "#e6e9f0",
+    "accent": "#4f8cff",
+    "muted": "#8891a8"
+  },
+  "typography": {
+    "font_family": "Inter, sans-serif",
+    "base_size_px": 15
+  }
+}

@@ -1,3 +1,5 @@
+use std::fmt::Display;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -5,8 +7,17 @@ use ebd_config::{Config, ConfigError, LogFormat, LogLevel};
 use ebd_contract::{AdapterError, Capability};
 use ebd_core::{AdapterManager, CompatibilityReport};
 use ebd_mock_client::MockClient;
+use ebd_plugin::PluginManifest;
+use ebd_registry::{Registry, TrustStore};
+use ebd_runtime::Runtime as PluginRuntime;
+use ebd_theme::ThemeManifest;
 
-const USAGE: &str = "Usage: ebd-cli [demo|capabilities|self-check|config [--init]]\n\
+const USAGE: &str = "Usage: ebd-cli <command> [args]\n\
+Commands: demo, capabilities, self-check, config [--init],\n\
+          plugin (demo|validate <file>|run <manifest>),\n\
+          theme validate <file>,\n\
+          package (verify|install|update <dir>|list|uninstall <id>),\n\
+          key (list|trust <name> <hex>)\n\
 Environment: EBD_CONFIG overrides the config file path.";
 
 #[derive(Debug)]
@@ -17,6 +28,12 @@ enum CliError {
     Adapter(AdapterError),
     /// Configuration could not be loaded or written: exit code 1.
     Config(ConfigError),
+    /// Plugin, theme, or package operation failed: exit code 1.
+    Operation(String),
+}
+
+fn operation(error: impl Display) -> CliError {
+    CliError::Operation(error.to_string())
 }
 
 impl From<AdapterError> for CliError {
@@ -44,6 +61,10 @@ fn main() -> ExitCode {
         }
         Err(CliError::Config(error)) => {
             eprintln!("ebd-cli: {error}");
+            ExitCode::FAILURE
+        }
+        Err(CliError::Operation(message)) => {
+            eprintln!("ebd-cli: {message}");
             ExitCode::FAILURE
         }
     }
@@ -128,10 +149,201 @@ where
             show_config(&path, init)?;
             Ok(())
         }
+        "plugin" => match rest.as_slice() {
+            [subcommand] if subcommand == "demo" => plugin_demo(),
+            [subcommand, path] if subcommand == "validate" => validate_plugin(Path::new(path)),
+            [subcommand, path] if subcommand == "run" => run_plugin(Path::new(path)),
+            _ => Err(CliError::Usage(format!(
+                "unknown `plugin` subcommand\n{USAGE}"
+            ))),
+        },
+        "theme" => match rest.as_slice() {
+            [subcommand, path] if subcommand == "validate" => validate_theme(Path::new(path)),
+            _ => Err(CliError::Usage(format!(
+                "unknown `theme` subcommand\n{USAGE}"
+            ))),
+        },
+        "package" => {
+            let (root, trust_path) = storage_paths(config_path.as_deref())?;
+            let trust = TrustStore::load(&trust_path).map_err(operation)?;
+            let registry = Registry::new(root, trust);
+
+            match rest.as_slice() {
+                [subcommand, path] if subcommand == "verify" => {
+                    let manifest = registry.verify(Path::new(path)).map_err(operation)?;
+                    println!(
+                        "{} {} ({}), publisher {}",
+                        manifest.id,
+                        manifest.version,
+                        manifest.kind.as_str(),
+                        manifest.publisher
+                    );
+                    Ok(())
+                }
+                [subcommand, path] if subcommand == "install" || subcommand == "update" => {
+                    let installed = if subcommand == "install" {
+                        registry.install(Path::new(path))
+                    } else {
+                        registry.update(Path::new(path))
+                    }
+                    .map_err(operation)?;
+                    println!(
+                        "Installed {} {} at {}",
+                        installed.id,
+                        installed.version,
+                        installed.path.display()
+                    );
+                    Ok(())
+                }
+                [subcommand] if subcommand == "list" => {
+                    let packages = registry.list().map_err(operation)?;
+                    if packages.is_empty() {
+                        println!("No packages installed.");
+                    } else {
+                        for package in packages {
+                            println!("{} {}", package.id, package.version);
+                        }
+                    }
+                    Ok(())
+                }
+                [subcommand, id] if subcommand == "uninstall" => {
+                    registry.uninstall(id).map_err(operation)?;
+                    println!("Uninstalled {id}");
+                    Ok(())
+                }
+                _ => Err(CliError::Usage(format!(
+                    "unknown `package` subcommand\n{USAGE}"
+                ))),
+            }
+        }
+        "key" => {
+            let (_, trust_path) = storage_paths(config_path.as_deref())?;
+            let mut trust = TrustStore::load(&trust_path).map_err(operation)?;
+
+            match rest.as_slice() {
+                [subcommand] if subcommand == "list" => {
+                    if trust.publishers().is_empty() {
+                        println!("No trusted publishers.");
+                    } else {
+                        for (name, key) in trust.publishers() {
+                            println!("{name} {key}");
+                        }
+                    }
+                    Ok(())
+                }
+                [subcommand, name, key] if subcommand == "trust" => {
+                    trust.trust(name, key).map_err(operation)?;
+                    trust.save(&trust_path).map_err(operation)?;
+                    println!("Trusted publisher {name}");
+                    Ok(())
+                }
+                _ => Err(CliError::Usage(format!(
+                    "unknown `key` subcommand\n{USAGE}"
+                ))),
+            }
+        }
         other => Err(CliError::Usage(format!(
             "unknown command `{other}`\n{USAGE}"
         ))),
     }
+}
+
+/// Packages and publisher keys live beside the config file.
+fn storage_paths(config_path: Option<&Path>) -> Result<(PathBuf, PathBuf), CliError> {
+    let base = config_path
+        .and_then(Path::parent)
+        .filter(|path| !path.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .or_else(|| {
+            ebd_config::default_path()
+                .ok()
+                .and_then(|path| path.parent().map(Path::to_path_buf))
+        })
+        .ok_or_else(|| {
+            CliError::Usage(format!(
+                "no configuration directory; set EBD_CONFIG to choose one\n{USAGE}"
+            ))
+        })?;
+
+    Ok((base.join("packages"), base.join(ebd_registry::TRUST_FILE)))
+}
+
+fn read_text(path: &Path) -> Result<String, CliError> {
+    fs::read_to_string(path)
+        .map_err(|error| operation(format!("cannot read {}: {error}", path.display())))
+}
+
+fn validate_plugin(path: &Path) -> Result<(), CliError> {
+    let manifest = PluginManifest::parse(&read_text(path)?).map_err(operation)?;
+    let grant = manifest.default_grant();
+    println!(
+        "Valid plugin manifest: {} {}",
+        manifest.id, manifest.version
+    );
+    println!(
+        "Permissions: {}",
+        grant
+            .permissions()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    Ok(())
+}
+
+fn run_plugin(path: &Path) -> Result<(), CliError> {
+    let manifest = PluginManifest::parse(&read_text(path)?).map_err(operation)?;
+    let grant = manifest.default_grant();
+    let wasm_path = path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(&manifest.entry);
+    let wasm = fs::read(&wasm_path)
+        .map_err(|error| operation(format!("cannot read {}: {error}", wasm_path.display())))?;
+
+    let execution = PluginRuntime::default()
+        .run(&wasm, &grant)
+        .map_err(operation)?;
+    for line in execution.log {
+        println!("[plugin] {line}");
+    }
+    println!("Plugin {} completed.", manifest.id);
+    Ok(())
+}
+
+/// Runs a tiny embedded WAT guest, proving the sandbox path works end-to-end.
+fn plugin_demo() -> Result<(), CliError> {
+    use ebd_plugin::PluginPermission;
+
+    let wasm = wat::parse_str(
+        r#"(module
+            (import "env" "ebd_log" (func $log (param i32 i32)))
+            (memory (export "memory") 1)
+            (data (i32.const 0) "sandboxed plugin says hello")
+            (func (export "run") (result i32)
+                i32.const 0 i32.const 27 call $log
+                i32.const 0))"#,
+    )
+    .map_err(|error| operation(format!("invalid demo guest: {error}")))?;
+
+    let grant = ebd_plugin::PluginGrant::new("demo.plugin", [PluginPermission::Log]);
+    let execution = PluginRuntime::default()
+        .run(&wasm, &grant)
+        .map_err(operation)?;
+    for line in execution.log {
+        println!("[plugin] {line}");
+    }
+    println!("Demo guest completed with fuel and memory limits active.");
+    Ok(())
+}
+
+fn validate_theme(path: &Path) -> Result<(), CliError> {
+    let theme = ThemeManifest::parse(&read_text(path)?).map_err(operation)?;
+    let preview = theme.preview().map_err(operation)?;
+    println!("Valid theme: {} {}", theme.id, theme.name);
+    println!("{}", preview.css);
+    Ok(())
 }
 
 /// Rejects arguments for commands that do not take any.

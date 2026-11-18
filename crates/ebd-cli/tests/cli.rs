@@ -135,3 +135,88 @@ fn invalid_config_fails_loudly() {
     assert!(output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stderr).contains("invalid configuration"));
 }
+
+#[test]
+fn plugin_demo_runs_a_sandboxed_guest() {
+    let output = ebd(&["plugin", "demo"]);
+    let text = stdout(&output);
+
+    assert!(output.status.success(), "stderr: {:?}", output.stderr);
+    assert!(
+        text.contains("[plugin] sandboxed plugin says hello"),
+        "{text}"
+    );
+    assert!(text.contains("fuel and memory limits active"), "{text}");
+}
+
+#[test]
+fn plugin_validate_checks_manifests() {
+    let dir = test_config("plugin")
+        .parent()
+        .expect("parent")
+        .to_path_buf();
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let manifest = dir.join("plugin.json");
+    std::fs::write(
+        &manifest,
+        r#"{"manifest_version":1,"id":"test.plugin","name":"Test","version":"1.0.0","entry":"plugin.wasm","requested":["log"]}"#,
+    )
+    .expect("write manifest");
+
+    let valid = ebd(&["plugin", "validate", manifest.to_str().expect("path")]);
+    assert!(valid.status.success(), "stderr: {:?}", valid.stderr);
+    assert!(
+        stdout(&valid).contains("Valid plugin manifest"),
+        "{}",
+        stdout(&valid)
+    );
+
+    std::fs::write(&manifest, r#"{"manifest_version":9}"#).expect("invalid manifest");
+    let invalid = ebd(&["plugin", "validate", manifest.to_str().expect("path")]);
+    assert_eq!(invalid.status.code(), Some(1));
+}
+
+#[test]
+fn theme_validate_prints_preview_css() {
+    let theme = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("examples")
+        .join("theme")
+        .join("midnight.json");
+
+    let output = ebd(&["theme", "validate", theme.to_str().expect("path")]);
+    let text = stdout(&output);
+
+    assert!(output.status.success(), "stderr: {:?}", output.stderr);
+    assert!(text.contains("Valid theme: midnight-blue"), "{text}");
+    assert!(text.contains("--ebd-accent: #4f8cff;"), "{text}");
+}
+
+#[test]
+fn key_and_package_commands_use_the_config_directory() {
+    let config = test_config("registry");
+    let dir = config.parent().expect("parent");
+    let _ = std::fs::remove_dir_all(dir);
+
+    let list = ebd_at(&config, &["package", "list"]);
+    assert!(list.status.success(), "stderr: {:?}", list.stderr);
+    assert!(stdout(&list).contains("No packages installed."));
+
+    let trusted = ebd_at(
+        &config,
+        &[
+            "key",
+            "trust",
+            "example",
+            "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        ],
+    );
+    assert!(trusted.status.success(), "stderr: {:?}", trusted.stderr);
+
+    let keys = ebd_at(&config, &["key", "list"]);
+    assert!(stdout(&keys).contains("example"), "{}", stdout(&keys));
+
+    let uninstall = ebd_at(&config, &["package", "uninstall", "missing.plugin"]);
+    assert_eq!(uninstall.status.code(), Some(1));
+}

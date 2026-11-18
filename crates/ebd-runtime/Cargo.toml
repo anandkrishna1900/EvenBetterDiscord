@@ -1,0 +1,16 @@
+[package]
+name = "ebd-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+ebd-contract = { path = "../ebd-contract" }
+ebd-plugin = { path = "../ebd-plugin" }
+thiserror.workspace = true
+wasmi.workspace = true
+wat.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
