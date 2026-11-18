@@ -1,0 +1,20 @@
+[package]
+name = "ebd-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+ebd-config = { path = "../ebd-config" }
+ebd-contract = { path = "../ebd-contract" }
+ebd-core = { path = "../ebd-core" }
+ebd-mock-client = { path = "../ebd-mock-client" }
+ebd-plugin = { path = "../ebd-plugin" }
+ebd-registry = { path = "../ebd-registry" }
+ebd-runtime = { path = "../ebd-runtime" }
+ebd-theme = { path = "../ebd-theme" }
+eframe.workspace = true
+serde_json.workspace = true
+wat.workspace = true

@@ -47,11 +47,15 @@ run.cmd capabilities          list contract capabilities and adapter support
 run.cmd self-check            fail unless every capability is declared
 run.cmd plugin demo           run an embedded guest in the WASM sandbox
 run.cmd theme validate examples/theme/midnight.json
+run.cmd gui                   launch the native desktop window (ebd-ui)
 ```
+
+`run.cmd gui` opens a native window with tabs for Chat, Capabilities, Plugins, Themes, Packages, and Config. It uses the offline mock client until an authorised client adapter exists; no Discord data is involved.
 
 The equivalent Cargo invocations (on any platform) are:
 
 ```sh
+cargo run -p ebd-ui                             # launch the native desktop window
 cargo run -p ebd-cli                            # adapter demo (default command)
 cargo run -p ebd-cli -- capabilities            # list contract capabilities and adapter support
 cargo run -p ebd-cli -- self-check              # fail unless every capability is declared

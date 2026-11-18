@@ -14,6 +14,7 @@ Snapshot: 2026-11-18, `main`. This document is the state of the project for the 
 | Sandbox | wasmi interpreter, allow-listed host imports, fuel/memory/table/instance limits | `crates/ebd-runtime`, `ebd-cli plugin demo` |
 | Themes | JSON schema, colour/text validation, CSS preview | `crates/ebd-theme`, `ebd-cli theme validate` |
 | Packages | SHA-256 hashes, Ed25519 signatures, trust store, install/list/update/uninstall | `crates/ebd-registry`, `ebd-cli package` / `key` |
+| Native UI | Basic egui/eframe window with chat, capabilities, plugins, themes, packages, and config tabs (mock adapter only) | `crates/ebd-ui`, `run.cmd gui` |
 | CI | fmt, clippy `-D warnings`, tests, MSRV job, Linux/Windows/macOS matrix | `.github/workflows/ci.yml` |
 
 All 72 tests pass locally; `fmt` and `clippy -D warnings` are clean. The MSRV is 1.88.
@@ -35,6 +36,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo run -p ebd-cli -- self-check
 cargo run -p ebd-cli -- plugin demo
+run.cmd gui                       :: Windows helper; opens the native window
 ```
 
 On a Windows machine without MSVC Build Tools, the working local setup is the GNU toolchain plus a MinGW linker (see README). Use `run.cmd` from the repository root, or prefix cargo commands with `+stable-x86_64-pc-windows-gnu`.
@@ -47,7 +49,7 @@ On a Windows machine without MSVC Build Tools, the working local setup is the GN
 - There is no publisher-facing signing CLI. `ebd_registry::sign_manifest` exists for tests and integrators; a `cargo run -p ebd-cli -- key generate` / `package sign` flow is still needed, including secure key generation and storage.
 - Trust store and config are plain JSON files with OS-level permissions only. No secret storage, no rotation, no revocation list.
 - The registry is local-only: no remote index, no update feed, no release packaging, no rollback beyond version-directory removal.
-- No graphical UI. Theme preview generates CSS data only; there is no GPUI application or live preview.
+- The graphical UI is a thin shell over the mock client. It applies theme colours to egui widgets but has no live client connection, no account switching, and no message persistence beyond the current session.
 - The plugin plan in `docs/PLUGIN_PLAN.md` is a 159-plugin wish list, not a commitment. The `[?]` entries are explicitly review-before-build.
 
 ## Next Discord-independent work, in suggested order
@@ -58,7 +60,7 @@ On a Windows machine without MSVC Build Tools, the working local setup is the GN
 4. **Theme editor/preview UI.** Wire `ThemePreview` into a UI; validate at save time; support multiple themes with activation state.
 5. **Update channel and release packaging.** Version manifests, platform artefacts, hashes/signatures for releases, rollback, and an offline-first update check.
 6. **Hosted marketplace (optional).** Only after the local model is stable; keep the trust model user-controlled and never auto-trust publishers.
-7. **Native UI.** Evaluate upstream GPUI; keep the CLI as the reference surface and reuse the same crates.
+7. **Grow the native UI.** Replace the egui shell with a richer layout, theme editor, permission prompts, and (only if justified) evaluate GPUI. Keep the CLI as the reference surface and reuse the same crates.
 
 ## When Discord publishes an authorised interface
 

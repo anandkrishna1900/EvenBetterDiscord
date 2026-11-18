@@ -13,7 +13,7 @@
 - [x] Theme schema, validation, and CSS preview (editor still pending)
 - [x] Local marketplace package install/update/uninstall
 - [x] Publisher signatures and trust management (publisher signing CLI still pending)
-- [ ] Native desktop UI (evaluate upstream GPUI)
+- [x] Native desktop UI (basic egui shell: chat, capabilities, plugins, themes, packages, config)
 - [ ] Update channel and release packaging
 
 See [HANDOVER.md](../HANDOVER.md) for scope, limitations, and the recommended next steps.

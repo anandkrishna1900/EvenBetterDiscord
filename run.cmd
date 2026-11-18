@@ -10,7 +10,11 @@ for /d %%D in ("%LOCALAPPDATA%\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.P
     if exist "%%~D\mingw64\bin\gcc.exe" set "PATH=%%~D\mingw64\bin;%PATH%"
 )
 
-cargo +stable-x86_64-pc-windows-gnu run -p ebd-cli -- %*
+if /I "%~1"=="gui" (
+    cargo +stable-x86_64-pc-windows-gnu run -p ebd-ui
+) else (
+    cargo +stable-x86_64-pc-windows-gnu run -p ebd-cli -- %*
+)
 set "STATUS=%ERRORLEVEL%"
 
 popd

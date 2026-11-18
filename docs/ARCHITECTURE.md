@@ -3,7 +3,7 @@
 EBD is split into a stable contract, core orchestration, client adapters, and user-facing applications.
 
 ```text
-Desktop UI / CLI
+Desktop UI (egui) / CLI
       |
    EBD Core ---- Plugin Host (sandboxed WASM)
       |
