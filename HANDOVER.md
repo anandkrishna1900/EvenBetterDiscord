@@ -37,7 +37,7 @@ cargo run -p ebd-cli -- self-check
 cargo run -p ebd-cli -- plugin demo
 ```
 
-On a Windows machine without MSVC Build Tools, the working local setup is the GNU toolchain plus a MinGW linker (see README), then prefix cargo commands with `+stable-x86_64-pc-windows-gnu`.
+On a Windows machine without MSVC Build Tools, the working local setup is the GNU toolchain plus a MinGW linker (see README). Use `run.cmd` from the repository root, or prefix cargo commands with `+stable-x86_64-pc-windows-gnu`.
 
 ## Known limitations
 

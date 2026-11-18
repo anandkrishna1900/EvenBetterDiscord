@@ -39,6 +39,18 @@ cargo test --workspace
 
 ## Usage
 
+On Windows with the GNU toolchain setup described above, run any command through the helper from the repository root:
+
+```cmd
+run.cmd                       adapter demo (default)
+run.cmd capabilities          list contract capabilities and adapter support
+run.cmd self-check            fail unless every capability is declared
+run.cmd plugin demo           run an embedded guest in the WASM sandbox
+run.cmd theme validate examples/theme/midnight.json
+```
+
+The equivalent Cargo invocations (on any platform) are:
+
 ```sh
 cargo run -p ebd-cli                            # adapter demo (default command)
 cargo run -p ebd-cli -- capabilities            # list contract capabilities and adapter support
