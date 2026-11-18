@@ -1,11 +1,18 @@
 @echo off
 setlocal EnableExtensions
 
-rem Use the MinGW linker installed alongside the GNU Rust toolchain.
-rem The winget package directory name includes a source suffix, so match it.
+rem Always run from the repository root, even when invoked by full path.
+pushd "%~dp0" || exit /b 1
+
+rem Locate the MinGW linker installed by winget. Its package directory name
+rem includes a source suffix, so match it instead of hardcoding the path.
 for /d %%D in ("%LOCALAPPDATA%\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.POSIX.UCRT_*") do (
     if exist "%%~D\mingw64\bin\gcc.exe" set "PATH=%%~D\mingw64\bin;%PATH%"
 )
 
 cargo +stable-x86_64-pc-windows-gnu run -p ebd-cli -- %*
-exit /b %ERRORLEVEL%
+set "STATUS=%ERRORLEVEL%"
+
+popd
+if not "%STATUS%"=="0" echo run.cmd failed with exit code %STATUS%.
+exit /b %STATUS%

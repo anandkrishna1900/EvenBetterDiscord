@@ -39,7 +39,7 @@ cargo test --workspace
 
 ## Usage
 
-On Windows with the GNU toolchain setup described above, run any command through the helper from the repository root:
+On Windows with the GNU toolchain setup described above, run any command through the helper. It works from any directory because it switches to the repository folder first:
 
 ```cmd
 run.cmd                       adapter demo (default)
