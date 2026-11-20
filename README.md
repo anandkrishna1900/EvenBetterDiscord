@@ -12,9 +12,10 @@ The current source is a working foundation, not a claim of Discord compatibility
 - Plugin manifests, explicit permission grants, and a sandboxed WASM runtime with fuel and memory limits
 - Theme schema, validation, and CSS preview generation
 - Local marketplace packages with SHA-256 integrity checks and Ed25519 publisher signatures
+- Native desktop window (egui/eframe, `ebd-ui`) over the mock client
 - Formatting, lint, MSRV, and test CI on Linux, Windows, and macOS
 
-Not yet implemented: a graphical GPUI application, a hosted marketplace, update/release packaging, package signing tooling for publishers, and Discord integration. See [HANDOVER.md](HANDOVER.md) for the full state and next steps.
+Not yet implemented: a richer UI (the current egui window is a thin shell over the mock client), a hosted marketplace, update/release packaging, package signing tooling for publishers, and Discord integration. See [HANDOVER.md](HANDOVER.md) for the full state and next steps.
 
 ## Requirements
 
