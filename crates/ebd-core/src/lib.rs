@@ -190,4 +190,47 @@ mod tests {
         assert!(manager.report().is_none());
         assert!(manager.detach().is_none());
     }
+
+    #[test]
+    fn conformance_gating_accepts_a_correct_adapter() {
+        assert_eq!(
+            ebd_contract::conformance::check_gating(&ReadOnlyAdapter),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn conformance_gating_flags_an_adapter_that_lies() {
+        #[derive(Debug)]
+        struct Liar;
+        impl ClientAdapter for Liar {
+            fn info(&self) -> ClientInfo {
+                ReadOnlyAdapter.info()
+            }
+            fn capabilities(&self) -> Vec<Capability> {
+                vec![]
+            }
+            fn current_user(&self) -> Result<User, AdapterError> {
+                ReadOnlyAdapter.current_user() // succeeds without declaring it
+            }
+            fn guilds(&self) -> Result<Vec<Guild>, AdapterError> {
+                ReadOnlyAdapter.guilds()
+            }
+            fn channels(&self, g: &str) -> Result<Vec<Channel>, AdapterError> {
+                ReadOnlyAdapter.channels(g)
+            }
+            fn messages(&self, c: &str, l: usize) -> Result<Vec<Message>, AdapterError> {
+                ReadOnlyAdapter.messages(c, l)
+            }
+            fn send_message(&self, c: &str, m: &str) -> Result<Message, AdapterError> {
+                ReadOnlyAdapter.send_message(c, m)
+            }
+            fn open_external_url(&self, u: &str) -> Result<(), AdapterError> {
+                ReadOnlyAdapter.open_external_url(u)
+            }
+        }
+        let problems = ebd_contract::conformance::check_gating(&Liar);
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(problems[0].contains("read_current_user"));
+    }
 }

@@ -17,7 +17,9 @@ Commands: demo, capabilities, self-check, config [--init],\n\
           plugin (demo|validate <file>|run <manifest>),\n\
           theme validate <file>,\n\
           package (verify|install|update <dir>|list|uninstall <id>),\n\
-          key (list|trust <name> <hex>)\n\
+          package pack <dir> <id> <version> <plugin|theme> <publisher> <keyfile>,\n\
+          key (list|trust <name> <hex>|gen <keyfile>),\n\
+          bot guilds   (live; needs EBD_DISCORD_TOKEN, a Discord bot token)\n\
 Environment: EBD_CONFIG overrides the config file path.";
 
 #[derive(Debug)]
@@ -163,6 +165,28 @@ where
                 "unknown `theme` subcommand\n{USAGE}"
             ))),
         },
+        "package" if matches!(rest.first().map(String::as_str), Some("pack")) => {
+            let [_, dir, id, version, kind, publisher, keyfile] = rest.as_slice() else {
+                return Err(CliError::Usage(format!(
+                    "bad `package pack` arguments\n{USAGE}"
+                )));
+            };
+            let kind = match kind.as_str() {
+                "plugin" => ebd_registry::PackageKind::Plugin,
+                "theme" => ebd_registry::PackageKind::Theme,
+                other => return Err(CliError::Usage(format!("unknown kind `{other}`"))),
+            };
+            let key = ebd_registry::load_key(Path::new(keyfile)).map_err(operation)?;
+            let manifest = ebd_registry::pack(Path::new(dir), id, version, kind, publisher, &key)
+                .map_err(operation)?;
+            println!(
+                "Packed {} {} ({} files)",
+                manifest.id,
+                manifest.version,
+                manifest.files.len()
+            );
+            Ok(())
+        }
         "package" => {
             let (root, trust_path) = storage_paths(config_path.as_deref())?;
             let trust = TrustStore::load(&trust_path).map_err(operation)?;
@@ -215,6 +239,21 @@ where
                     "unknown `package` subcommand\n{USAGE}"
                 ))),
             }
+        }
+        "bot" if rest == ["guilds"] => {
+            let token = std::env::var("EBD_DISCORD_TOKEN")
+                .map_err(|_| operation("set EBD_DISCORD_TOKEN to a Discord bot token"))?;
+            let mut manager = AdapterManager::new();
+            manager.attach(Box::new(ebd_discord_bot::DiscordBot::new(token)));
+            for guild in manager.adapter_for(Capability::ReadGuilds)?.guilds()? {
+                println!("{} {}", guild.id, guild.name);
+            }
+            Ok(())
+        }
+        "key" if matches!(rest.as_slice(), [sub, _] if sub == "gen") => {
+            let public = ebd_registry::generate_key(Path::new(&rest[1])).map_err(operation)?;
+            println!("Public key (give to `key trust`): {public}");
+            Ok(())
         }
         "key" => {
             let (_, trust_path) = storage_paths(config_path.as_deref())?;
@@ -302,8 +341,11 @@ fn run_plugin(path: &Path) -> Result<(), CliError> {
     let wasm = fs::read(&wasm_path)
         .map_err(|error| operation(format!("cannot read {}: {error}", wasm_path.display())))?;
 
+    // Granted client functions act on the offline mock until a real adapter exists.
+    let mut manager = AdapterManager::new();
+    manager.attach(Box::new(MockClient));
     let execution = PluginRuntime::default()
-        .run(&wasm, &grant)
+        .run_with(&wasm, &grant, Some(&manager))
         .map_err(operation)?;
     for line in execution.log {
         println!("[plugin] {line}");

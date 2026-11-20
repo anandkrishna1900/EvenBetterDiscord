@@ -274,4 +274,9 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn mock_passes_conformance() {
+        assert!(ebd_contract::conformance::check_gating(&MockClient).is_empty());
+    }
 }

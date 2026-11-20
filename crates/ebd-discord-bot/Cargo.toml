@@ -1,0 +1,12 @@
+[package]
+name = "ebd-discord-bot"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+ebd-contract = { path = "../ebd-contract" }
+serde.workspace = true
+serde_json.workspace = true
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }

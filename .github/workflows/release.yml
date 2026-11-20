@@ -1,0 +1,40 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, name: linux-x86_64 }
+          - { os: windows-latest, name: windows-x86_64 }
+          - { os: macos-latest, name: macos-arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --release
+      - run: cargo build --release --locked -p ebd-cli -p ebd-ui
+      - name: Package
+        shell: bash
+        run: |
+          dir="ebd-${GITHUB_REF_NAME}-${{ matrix.name }}"
+          mkdir "$dir"
+          cp target/release/ebd-cli* target/release/ebd-ui* "$dir"/ 2>/dev/null || true
+          rm -f "$dir"/*.d "$dir"/*.pdb
+          cp README.md LICENSE* "$dir"/ 2>/dev/null || true
+          if [ "${{ runner.os }}" = "Windows" ]; then 7z a "$dir.zip" "$dir"; asset="$dir.zip"; else tar czf "$dir.tar.gz" "$dir"; asset="$dir.tar.gz"; fi
+          if command -v sha256sum >/dev/null; then sha256sum "$asset" > "$asset.sha256"; else shasum -a 256 "$asset" > "$asset.sha256"; fi
+          echo "ASSET=$asset" >> "$GITHUB_ENV"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.ASSET }}
+            ${{ env.ASSET }}.sha256

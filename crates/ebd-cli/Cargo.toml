@@ -9,6 +9,7 @@ license.workspace = true
 ebd-config = { path = "../ebd-config" }
 ebd-contract = { path = "../ebd-contract" }
 ebd-core = { path = "../ebd-core" }
+ebd-discord-bot = { path = "../ebd-discord-bot" }
 ebd-mock-client = { path = "../ebd-mock-client" }
 ebd-plugin = { path = "../ebd-plugin" }
 ebd-registry = { path = "../ebd-registry" }

@@ -43,7 +43,7 @@ On a Windows machine without MSVC Build Tools, the working local setup is the GN
 
 ## Known limitations
 
-- `ebd_send_message` and `ebd_open_url` host functions currently return `1` ("no adapter available"). Wiring them to `AdapterManager` and a permission dialog is the next plugin-host task.
+- Host functions are wired to `AdapterManager` via `Runtime::run_with` (status 1 when nothing is attached). Still missing: a user-facing permission prompt/approval store; the UI plugin tab still runs with a log-only grant.
 - Fuel is a CPU proxy, not a wall-clock deadline. A cooperative guest cannot block forever, but an extremely expensive single instruction sequence is bounded only by fuel accounting.
 - The WASM guest protocol is minimal: `run() -> i32` plus exported linear memory. There is no SDK crate, no ABI version negotiation, and no compiled example `.wasm` (only WAT source and an embedded demo).
 - There is no publisher-facing signing CLI. `ebd_registry::sign_manifest` exists for tests and integrators; a `cargo run -p ebd-cli -- key generate` / `package sign` flow is still needed, including secure key generation and storage.
@@ -54,7 +54,7 @@ On a Windows machine without MSVC Build Tools, the working local setup is the GN
 
 ## Next Discord-independent work, in suggested order
 
-1. **Finish the plugin host loop.** Give `ebd-runtime` a real adapter-backed host: pass an `AdapterManager` reference into the store, implement `ebd_send_message` and `ebd_open_url` through `adapter_for` + `PluginGrant`, and surface denials to the guest. Add a permission prompt/approval store in `ebd-config`.
+1. **Finish the plugin permission flow.** Add a permission prompt/approval store in `ebd-config` and use `run_with` in the UI.
 2. **Publisher tooling.** `key generate`, `key export`, `package sign`, and `package build` CLI commands; deterministic canonical manifest bytes; key file permissions; revocation/trust revocation.
 3. **Plugin SDK + real example.** A small `no_std` guest crate with typed host bindings, an ABI version field in the manifest, and a checked-in compiled `.wasm` example so `plugin run` works without `wat2wasm`.
 4. **Theme editor/preview UI.** Wire `ThemePreview` into a UI; validate at save time; support multiple themes with activation state.
