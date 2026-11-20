@@ -6,6 +6,7 @@
 //! resource limiter. Modules are validated before instantiation.
 
 use ebd_contract::Capability;
+use ebd_core::AdapterManager;
 use ebd_plugin::{PluginGrant, PluginPermission};
 use wasmi::{Engine, Extern, Linker, Module, Store, StoreLimits, StoreLimitsBuilder, Val};
 
@@ -61,10 +62,12 @@ pub enum RuntimeError {
     Failed(i32),
 }
 
-#[derive(Debug)]
-struct HostState {
+struct HostState<'a> {
     log: Vec<String>,
     limits: StoreLimits,
+    /// Client the granted host functions talk to; always goes through the
+    /// manager's capability gate. `None` means "no client attached".
+    manager: Option<&'a AdapterManager>,
 }
 
 /// The sandbox. Cheap to construct; each `run` gets a fresh store.
@@ -78,8 +81,19 @@ impl Runtime {
         Self { limits }
     }
 
-    /// Runs the `run() -> i32` export of `wasm` with only `grant` available.
+    /// Runs the `run() -> i32` export of `wasm` with only `grant` available
+    /// and no client attached (client host functions report status 1).
     pub fn run(&self, wasm: &[u8], grant: &PluginGrant) -> Result<Execution, RuntimeError> {
+        self.run_with(wasm, grant, None)
+    }
+
+    /// Like [`Runtime::run`], but granted client host functions act on `manager`.
+    pub fn run_with(
+        &self,
+        wasm: &[u8],
+        grant: &PluginGrant,
+        manager: Option<&AdapterManager>,
+    ) -> Result<Execution, RuntimeError> {
         let mut config = wasmi::Config::default();
         config.consume_fuel(true);
         let engine = Engine::new(&config);
@@ -93,6 +107,7 @@ impl Runtime {
             HostState {
                 log: Vec::new(),
                 limits: self.resource_limits(),
+                manager,
             },
         );
         store.limiter(|state| &mut state.limits);
@@ -153,6 +168,7 @@ fn check_imports(module: &Module, grant: &PluginGrant) -> Result<(), RuntimeErro
 
         let permission = match import.name() {
             "ebd_log" => PluginPermission::Log,
+            "ebd_current_user" => PluginPermission::ReadCurrentUser,
             "ebd_send_message" => PluginPermission::SendMessages,
             "ebd_open_url" => PluginPermission::OpenExternalUrl,
             other => return Err(RuntimeError::UnknownImport(other.to_owned())),
@@ -166,7 +182,7 @@ fn check_imports(module: &Module, grant: &PluginGrant) -> Result<(), RuntimeErro
 }
 
 fn link_host_functions(
-    linker: &mut Linker<HostState>,
+    linker: &mut Linker<HostState<'_>>,
     grant: &PluginGrant,
 ) -> Result<(), RuntimeError> {
     if grant.allows(PluginPermission::Log) {
@@ -174,7 +190,7 @@ fn link_host_functions(
             .func_wrap(
                 "env",
                 "ebd_log",
-                |mut caller: wasmi::Caller<'_, HostState>, pointer: i32, length: i32| {
+                |mut caller: wasmi::Caller<'_, HostState<'_>>, pointer: i32, length: i32| {
                     let bytes = read_memory(&mut caller, pointer, length)?;
                     let message = String::from_utf8_lossy(&bytes).into_owned();
                     caller.data_mut().log.push(message);
@@ -183,25 +199,75 @@ fn link_host_functions(
             )
             .map_err(|error| RuntimeError::Module(error.to_string()))?;
     }
+    if grant.allows(PluginPermission::ReadCurrentUser) {
+        // (out_ptr, out_cap) -> bytes written (username, truncated to out_cap), or -1 on failure.
+        linker
+            .func_wrap(
+                "env",
+                "ebd_current_user",
+                |mut caller: wasmi::Caller<'_, HostState<'_>>, pointer: i32, capacity: i32| {
+                    let user = caller
+                        .data()
+                        .manager
+                        .and_then(|m| m.adapter_for(Capability::ReadCurrentUser).ok())
+                        .and_then(|adapter| adapter.current_user().ok());
+                    let Some(user) = user else {
+                        return Ok::<i32, wasmi::Error>(-1);
+                    };
+                    let bytes = user.username.as_bytes();
+                    let length = bytes.len().min(usize::try_from(capacity).unwrap_or(0));
+                    write_memory(&mut caller, pointer, &bytes[..length])?;
+                    Ok(length as i32)
+                },
+            )
+            .map_err(|error| RuntimeError::Module(error.to_string()))?;
+    }
     if grant.allows(PluginPermission::SendMessages) {
-        // Return 1 ("no adapter available") until a real client is attached.
+        // (channel_ptr, channel_len, text_ptr, text_len) -> 0 ok, 1 unavailable, 2 failed.
         linker
             .func_wrap(
                 "env",
                 "ebd_send_message",
-                |_caller: wasmi::Caller<'_, HostState>, _pointer: i32, _length: i32| {
-                    Ok::<i32, wasmi::Error>(1)
+                |mut caller: wasmi::Caller<'_, HostState<'_>>,
+                 channel_ptr: i32,
+                 channel_len: i32,
+                 text_ptr: i32,
+                 text_len: i32| {
+                    let channel = read_memory(&mut caller, channel_ptr, channel_len)?;
+                    let text = read_memory(&mut caller, text_ptr, text_len)?;
+                    let Some(adapter) = caller
+                        .data()
+                        .manager
+                        .and_then(|m| m.adapter_for(Capability::SendMessages).ok())
+                    else {
+                        return Ok::<i32, wasmi::Error>(1);
+                    };
+                    let sent = adapter.send_message(
+                        &String::from_utf8_lossy(&channel),
+                        &String::from_utf8_lossy(&text),
+                    );
+                    Ok(if sent.is_ok() { 0 } else { 2 })
                 },
             )
             .map_err(|error| RuntimeError::Module(error.to_string()))?;
     }
     if grant.allows(PluginPermission::OpenExternalUrl) {
+        // (url_ptr, url_len) -> 0 ok, 1 unavailable, 2 failed.
         linker
             .func_wrap(
                 "env",
                 "ebd_open_url",
-                |_caller: wasmi::Caller<'_, HostState>, _pointer: i32, _length: i32| {
-                    Ok::<i32, wasmi::Error>(1)
+                |mut caller: wasmi::Caller<'_, HostState<'_>>, pointer: i32, length: i32| {
+                    let url = read_memory(&mut caller, pointer, length)?;
+                    let Some(adapter) = caller
+                        .data()
+                        .manager
+                        .and_then(|m| m.adapter_for(Capability::OpenExternalUrl).ok())
+                    else {
+                        return Ok::<i32, wasmi::Error>(1);
+                    };
+                    let opened = adapter.open_external_url(&String::from_utf8_lossy(&url));
+                    Ok(if opened.is_ok() { 0 } else { 2 })
                 },
             )
             .map_err(|error| RuntimeError::Module(error.to_string()))?;
@@ -210,7 +276,7 @@ fn link_host_functions(
 }
 
 fn read_memory(
-    caller: &mut wasmi::Caller<'_, HostState>,
+    caller: &mut wasmi::Caller<'_, HostState<'_>>,
     pointer: i32,
     length: i32,
 ) -> Result<Vec<u8>, wasmi::Error> {
@@ -227,6 +293,22 @@ fn read_memory(
         .read(&*caller, pointer, &mut buffer)
         .map_err(|error| wasmi::Error::new(error.to_string()))?;
     Ok(buffer)
+}
+
+fn write_memory(
+    caller: &mut wasmi::Caller<'_, HostState<'_>>,
+    pointer: i32,
+    bytes: &[u8],
+) -> Result<(), wasmi::Error> {
+    let pointer =
+        usize::try_from(pointer).map_err(|_| wasmi::Error::new("negative memory pointer"))?;
+    let memory = caller
+        .get_export("memory")
+        .and_then(Extern::into_memory)
+        .ok_or_else(|| wasmi::Error::new("guest has no exported `memory`"))?;
+    memory
+        .write(&mut *caller, pointer, bytes)
+        .map_err(|error| wasmi::Error::new(error.to_string()))
 }
 
 fn map_wasmi_error(error: wasmi::Error) -> RuntimeError {
@@ -395,5 +477,76 @@ mod tests {
         let grant = grant(&[PluginPermission::ReadCurrentUser]);
         assert!(require_capability(&grant, Capability::ReadCurrentUser).is_ok());
         assert!(require_capability(&grant, Capability::SendMessages).is_err());
+    }
+
+    fn mock_manager() -> AdapterManager {
+        let mut manager = AdapterManager::new();
+        manager.attach(Box::new(ebd_mock_client::MockClient));
+        manager
+    }
+
+    /// Guest that sends `text` to `channel` and returns the host status.
+    fn send_guest(channel: &str, text: &str) -> Vec<u8> {
+        wat::parse_str(format!(
+            r#"(module
+                (import "env" "ebd_send_message" (func $send (param i32 i32 i32 i32) (result i32)))
+                (memory (export "memory") 1)
+                (data (i32.const 0) "{channel}")
+                (data (i32.const 64) "{text}")
+                (func (export "run") (result i32)
+                    i32.const 0 i32.const {} i32.const 64 i32.const {} call $send))"#,
+            channel.len(),
+            text.len()
+        ))
+        .expect("wat")
+    }
+
+    #[test]
+    fn send_message_status_reflects_the_attached_client() {
+        let grant = grant(&[PluginPermission::SendMessages]);
+        let channel = ebd_mock_client::MOCK_CHANNEL_ID;
+        let runtime = Runtime::default();
+
+        // Status 1: no client attached.
+        let wasm = send_guest(channel, "hi");
+        assert!(matches!(
+            runtime.run(&wasm, &grant),
+            Err(RuntimeError::Failed(1))
+        ));
+        // Status 0: delivered to the mock.
+        assert!(runtime
+            .run_with(&wasm, &grant, Some(&mock_manager()))
+            .is_ok());
+        // Status 2: the client rejected it (unknown channel).
+        let wasm = send_guest("nope", "hi");
+        assert!(matches!(
+            runtime.run_with(&wasm, &grant, Some(&mock_manager())),
+            Err(RuntimeError::Failed(2))
+        ));
+    }
+
+    #[test]
+    fn granted_current_user_writes_into_guest_memory() {
+        let wasm = wat::parse_str(
+            r#"(module
+                (import "env" "ebd_current_user" (func $user (param i32 i32) (result i32)))
+                (import "env" "ebd_log" (func $log (param i32 i32)))
+                (memory (export "memory") 1)
+                (func (export "run") (result i32) (local i32)
+                    i32.const 0 i32.const 64 call $user
+                    local.set 0
+                    i32.const 0 local.get 0 call $log
+                    i32.const 0))"#,
+        )
+        .expect("wat");
+        let grant = grant(&[PluginPermission::ReadCurrentUser, PluginPermission::Log]);
+        let expected = ebd_contract::ClientAdapter::current_user(&ebd_mock_client::MockClient)
+            .expect("mock user")
+            .username;
+
+        let execution = Runtime::default()
+            .run_with(&wasm, &grant, Some(&mock_manager()))
+            .expect("run");
+        assert_eq!(execution.log, vec![expected]);
     }
 }

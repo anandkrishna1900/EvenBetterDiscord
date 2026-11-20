@@ -7,10 +7,12 @@ license.workspace = true
 
 [dependencies]
 ebd-contract = { path = "../ebd-contract" }
+ebd-core = { path = "../ebd-core" }
 ebd-plugin = { path = "../ebd-plugin" }
 thiserror.workspace = true
 wasmi.workspace = true
 wat.workspace = true
 
 [dev-dependencies]
+ebd-mock-client = { path = "../ebd-mock-client" }
 serde_json.workspace = true

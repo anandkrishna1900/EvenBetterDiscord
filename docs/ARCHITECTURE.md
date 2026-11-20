@@ -49,7 +49,7 @@ Config is process-level only. Plugin permissions, account-scoped data, and UI st
 
 ## Plugin sandbox
 
-A manifest declares requested permissions; a grant is the user-approved subset. The runtime checks a module's imports before instantiation and refuses any host function that is not in the grant. Only `env.ebd_log`, `env.ebd_send_message`, and `env.ebd_open_url` are known today; all other imports are rejected. Each invocation gets a fresh store with a fuel budget, capped memory/tables/instances, and a trap on failed memory growth. Guests have no filesystem, network, clock, or WASI access.
+A manifest declares requested permissions; a grant is the user-approved subset. The runtime checks a module's imports before instantiation and refuses any host function that is not in the grant. Only `env.ebd_log`, `env.ebd_current_user`, `env.ebd_send_message`, and `env.ebd_open_url` are known today (see `docs/PLUGINS.md`); all other imports are rejected. Each invocation gets a fresh store with a fuel budget, capped memory/tables/instances, and a trap on failed memory growth. Guests have no filesystem, network, clock, or WASI access.
 
 The message and URL host functions currently return a placeholder failure code. Wiring them to `AdapterManager` through `adapter_for` is the next host task; the gate must still apply, so a grant never bypasses a capability the adapter did not declare.
 

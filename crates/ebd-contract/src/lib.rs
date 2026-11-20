@@ -170,3 +170,48 @@ mod tests {
         );
     }
 }
+
+/// Reusable checks any [`ClientAdapter`] implementation should pass.
+pub mod conformance {
+    use super::*;
+
+    /// Side-effect free: only calls methods the adapter says it does NOT
+    /// support, and expects each to fail with `Unsupported(<that capability>)`.
+    /// Returns a list of human-readable violations (empty means conformant).
+    pub fn check_gating(adapter: &dyn ClientAdapter) -> Vec<String> {
+        let mut problems = Vec::new();
+        let declared = adapter.capabilities();
+
+        let info = adapter.info();
+        if info.client_name.is_empty() || info.adapter_version.is_empty() {
+            problems.push("info() must name the client and adapter version".into());
+        }
+        for (index, capability) in declared.iter().enumerate() {
+            if declared[..index].contains(capability) {
+                problems.push(format!("capability declared twice: {capability}"));
+            }
+        }
+
+        for capability in Capability::ALL {
+            if declared.contains(&capability) {
+                continue;
+            }
+            let outcome = match capability {
+                Capability::ReadCurrentUser => adapter.current_user().err(),
+                Capability::ReadGuilds => adapter.guilds().err(),
+                Capability::ReadChannels => adapter.channels("probe").err(),
+                Capability::ReadMessages => adapter.messages("probe", 1).err(),
+                Capability::SendMessages => adapter.send_message("probe", "probe").err(),
+                Capability::OpenExternalUrl => {
+                    adapter.open_external_url("https://example.invalid").err()
+                }
+            };
+            if outcome != Some(AdapterError::Unsupported(capability)) {
+                problems.push(format!(
+                    "undeclared capability {capability} must fail with Unsupported, got {outcome:?}"
+                ));
+            }
+        }
+        problems
+    }
+}

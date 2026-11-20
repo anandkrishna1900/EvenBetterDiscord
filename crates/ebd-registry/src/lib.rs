@@ -304,6 +304,92 @@ pub fn sign_manifest(manifest: &PackageManifest, key: &SigningKey) -> String {
     hex::encode(key.sign(&bytes).to_bytes())
 }
 
+/// Generates a publisher key and writes its secret (hex) to `path`
+/// (owner-only on Unix). Returns the public key as hex, for `key trust`.
+pub fn generate_key(path: &Path) -> Result<String, RegistryError> {
+    let key = SigningKey::generate(&mut rand_core::OsRng);
+    let io_error = |error| RegistryError::Io(path.to_owned(), error);
+    let mut file = fs::OpenOptions::new();
+    file.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut file, 0o600);
+    io::Write::write_all(
+        &mut file.open(path).map_err(io_error)?,
+        hex::encode(key.to_bytes()).as_bytes(),
+    )
+    .map_err(io_error)?;
+    Ok(hex::encode(key.verifying_key().to_bytes()))
+}
+
+/// Reads a secret key written by [`generate_key`].
+pub fn load_key(path: &Path) -> Result<SigningKey, RegistryError> {
+    let contents =
+        fs::read_to_string(path).map_err(|error| RegistryError::Io(path.to_owned(), error))?;
+    let bytes: [u8; 32] = decode_hex(&contents, 32, "secret key")?
+        .try_into()
+        .map_err(|_| RegistryError::InvalidKey("secret key has the wrong length".into()))?;
+    Ok(SigningKey::from_bytes(&bytes))
+}
+
+/// Hashes every regular file in `dir`, then writes `package.json` and
+/// `signature.sig` so the directory passes [`verify_package`] for `key`'s publisher.
+pub fn pack(
+    dir: &Path,
+    id: &str,
+    version: &str,
+    kind: PackageKind,
+    publisher: &str,
+    key: &SigningKey,
+) -> Result<PackageManifest, RegistryError> {
+    let mut files = BTreeMap::new();
+    collect_files(dir, "", &mut files)?;
+    let manifest = PackageManifest {
+        id: id.into(),
+        version: version.into(),
+        kind,
+        publisher: publisher.into(),
+        files,
+    };
+    // Same checks a verifier applies, before anything is written.
+    validate_id(id)?;
+    validate_semver(version)?;
+    if !manifest.files.contains_key(kind.manifest_file()) {
+        return Err(RegistryError::InvalidField("files"));
+    }
+    let write = |name: &str, bytes: &[u8]| {
+        let path = dir.join(name);
+        fs::write(&path, bytes).map_err(|error| RegistryError::Io(path, error))
+    };
+    write(
+        PACKAGE_FILE,
+        &serde_json::to_vec(&manifest).expect("package manifest is serialisable"),
+    )?;
+    write(SIGNATURE_FILE, sign_manifest(&manifest, key).as_bytes())?;
+    Ok(manifest)
+}
+
+fn collect_files(
+    dir: &Path,
+    prefix: &str,
+    files: &mut BTreeMap<String, String>,
+) -> Result<(), RegistryError> {
+    let entries = fs::read_dir(dir).map_err(|error| RegistryError::Io(dir.to_owned(), error))?;
+    for entry in entries {
+        let entry = entry.map_err(|error| RegistryError::Io(dir.to_owned(), error))?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let relative = format!("{prefix}{name}");
+        let kind = entry
+            .file_type()
+            .map_err(|error| RegistryError::Io(entry.path(), error))?;
+        if kind.is_dir() {
+            collect_files(&entry.path(), &format!("{relative}/"), files)?;
+        } else if kind.is_file() && relative != PACKAGE_FILE && relative != SIGNATURE_FILE {
+            files.insert(relative, hash_file(&entry.path())?);
+        }
+    }
+    Ok(())
+}
+
 pub fn hash_file(path: &Path) -> Result<String, RegistryError> {
     let bytes = fs::read(path).map_err(|error| RegistryError::Io(path.to_owned(), error))?;
     Ok(hex::encode(Sha256::digest(&bytes)))
@@ -564,5 +650,33 @@ mod tests {
         let listed = registry.list().expect("list");
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].version, "2.0.0");
+    }
+
+    #[test]
+    fn packed_directory_verifies_and_keys_round_trip() {
+        let dir = temp_dir("pack");
+        fs::write(dir.join("plugin.json"), "{}").expect("plugin.json");
+        fs::create_dir_all(dir.join("sub")).expect("sub");
+        fs::write(dir.join("sub/a.bin"), "x").expect("a.bin");
+
+        let key_path = dir
+            .join("..")
+            .join(format!("ebd-key-{}.hex", std::process::id()));
+        let _ = fs::remove_file(&key_path);
+        let public = generate_key(&key_path).expect("generate");
+        assert!(generate_key(&key_path).is_err(), "must not overwrite a key");
+        let key = load_key(&key_path).expect("load");
+        assert_eq!(public, hex::encode(key.verifying_key().to_bytes()));
+        let _ = fs::remove_file(&key_path);
+
+        pack(&dir, "demo.pack", "0.1.0", PackageKind::Plugin, "me", &key).expect("pack");
+        let mut trust = TrustStore::default();
+        trust.trust("me", &public).expect("trust");
+        let manifest = verify_package(&dir, &trust).expect("verify");
+        assert!(manifest.files.contains_key("sub/a.bin"));
+
+        // Re-packing is stable: package.json/signature.sig are not hashed into themselves.
+        pack(&dir, "demo.pack", "0.1.0", PackageKind::Plugin, "me", &key).expect("repack");
+        verify_package(&dir, &trust).expect("verify again");
     }
 }

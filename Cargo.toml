@@ -5,6 +5,7 @@ members = [
   "crates/ebd-cli",
   "crates/ebd-config",
   "crates/ebd-contract",
+  "crates/ebd-discord-bot",
   "crates/ebd-core",
   "crates/ebd-mock-client",
   "crates/ebd-plugin",
