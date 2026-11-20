@@ -386,9 +386,14 @@ impl App {
             ui.separator();
             for capability in Capability::ALL {
                 let supported = self.report.supports(capability);
-                let icon = if supported { "✔" } else { "✘" };
+                // Text, not just a glyph, so state isn't conveyed by shape alone.
+                let state = if supported {
+                    "✔ supported"
+                } else {
+                    "✘ unsupported"
+                };
                 ui.horizontal(|ui| {
-                    ui.label(icon);
+                    ui.label(state);
                     ui.label(capability.as_str());
                 });
             }
@@ -515,14 +520,18 @@ impl App {
             });
 
             if let Some(error) = &self.theme_error {
-                ui.colored_label(Color32::RED, error);
+                ui.colored_label(ui.visuals().error_fg_color, error);
             }
             if let Some(preview) = &self.theme_preview {
                 ui.heading("Swatches");
                 ui.horizontal_wrapped(|ui| {
                     for (name, hex) in &preview.swatches {
                         if let Some(color) = parse_hex(hex) {
-                            ui.colored_label(color, format!("{name}: {hex}"));
+                            // Chip + default-colored label: stays readable on any theme background.
+                            let (rect, _) = ui
+                                .allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                            ui.painter().rect_filled(rect, 2.0, color);
+                            ui.label(format!("{name}: {hex}"));
                         }
                     }
                 });
@@ -721,12 +730,63 @@ fn parse_hex(value: &str) -> Option<Color32> {
             component(2..4)?,
             component(4..6)?,
         )),
-        8 => Some(Color32::from_rgba_premultiplied(
+        8 => Some(Color32::from_rgba_unmultiplied(
             component(0..2)?,
             component(2..4)?,
             component(4..6)?,
             component(6..8)?,
         )),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_hex_handles_all_lengths_and_rejects_junk() {
+        assert_eq!(parse_hex("#fff"), Some(Color32::from_rgb(255, 255, 255)));
+        assert_eq!(parse_hex("#102030"), Some(Color32::from_rgb(16, 32, 48)));
+        assert_eq!(
+            parse_hex("#ff000080"),
+            Some(Color32::from_rgba_unmultiplied(255, 0, 0, 128))
+        );
+        for bad in ["fff", "#ff", "#ggg", "#é12345", ""] {
+            assert_eq!(parse_hex(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn app_starts_with_chat_and_default_theme() {
+        let app = App::new();
+        assert!(app.theme_error.is_none() && app.theme_preview.is_some());
+        assert!(app.selected_channel.is_some() && !app.messages.is_empty());
+    }
+
+    #[test]
+    fn send_message_validates_then_appends() {
+        let mut app = App::new();
+        app.draft = "   ".into();
+        app.send_message();
+        assert_eq!(app.status, "Type a message first.");
+
+        let before = app.messages.len();
+        app.draft = "hi".into();
+        app.send_message();
+        assert_eq!(app.messages.len(), before + 1);
+        assert!(app.draft.is_empty());
+
+        app.selected_channel = None;
+        app.draft = "hi".into();
+        app.send_message();
+        assert_eq!(app.status, "Select a channel first.");
+    }
+
+    #[test]
+    fn invalid_theme_sets_error() {
+        let mut app = App::new();
+        app.apply_theme_text("not json");
+        assert!(app.theme_error.is_some());
     }
 }
